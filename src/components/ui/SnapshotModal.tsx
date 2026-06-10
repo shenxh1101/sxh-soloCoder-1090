@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X, Clock, Activity, Package, AlertTriangle } from 'lucide-react';
 import { useProductionStore } from '../../store/useProductionStore';
 import { STATUS_COLORS, STATUS_LABELS, THEME_COLORS } from '../../utils/constants';
@@ -6,15 +6,25 @@ import { formatDuration } from '../../utils/efficiencyCalculator';
 
 export function SnapshotModal() {
   const { productionHistory, selectedSnapshotTimestamp, setSelectedSnapshot } = useProductionStore();
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!selectedSnapshotTimestamp) return;
+    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, [selectedSnapshotTimestamp]);
 
   const snapshot = useMemo(() => {
     if (!selectedSnapshotTimestamp) return null;
-    return productionHistory.find((r) => r.timestamp === selectedSnapshotTimestamp);
+    return productionHistory.find((r) => r.timestamp === selectedSnapshotTimestamp) || null;
   }, [productionHistory, selectedSnapshotTimestamp]);
 
-  if (!snapshot || !selectedSnapshotTimestamp) return null;
+  if (!snapshot) return null;
 
   const handleClose = () => setSelectedSnapshot(null);
+  const qualityPct = snapshot.totalInspected > 0 ? ((snapshot.goodCount / snapshot.totalInspected) * 100).toFixed(1) : 'N/A';
+  const taktSec = snapshot.taktTime ? (snapshot.taktTime / 1000).toFixed(2) : 'N/A';
+  const bottleneckMachine = snapshot.machineStates?.find((m) => m.id === snapshot.bottleneckMachineId);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -68,31 +78,29 @@ export function SnapshotModal() {
             </div>
           </div>
 
-          {snapshot.goodCount !== undefined && snapshot.totalInspected !== undefined && (
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-lg border border-gray-700/30 bg-gray-800/50 p-3">
-                <div className="text-xs text-gray-400">良品率</div>
-                <div className="mt-1 font-mono text-xl font-bold text-emerald-400">
-                  {snapshot.totalInspected > 0 ? ((snapshot.goodCount / snapshot.totalInspected) * 100).toFixed(1) : 'N/A'}%
-                </div>
-                <div className="mt-0.5 text-[10px] text-gray-500">
-                  {snapshot.goodCount}/{snapshot.totalInspected} 件
-                </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-lg border border-gray-700/30 bg-gray-800/50 p-3">
+              <div className="text-xs text-gray-400">良品率</div>
+              <div className="mt-1 font-mono text-xl font-bold text-emerald-400">
+                {qualityPct}%
               </div>
-              <div className="rounded-lg border border-gray-700/30 bg-gray-800/50 p-3">
-                <div className="text-xs text-gray-400">生产节拍</div>
-                <div className="mt-1 font-mono text-xl font-bold text-amber-400">
-                  {snapshot.taktTime ? (snapshot.taktTime / 1000).toFixed(2) : 'N/A'}s
-                </div>
-              </div>
-              <div className="rounded-lg border border-gray-700/30 bg-gray-800/50 p-3">
-                <div className="text-xs text-gray-400">故障时长</div>
-                <div className="mt-1 font-mono text-xl font-bold text-red-400">
-                  {formatDuration(snapshot.faultDuration)}
-                </div>
+              <div className="mt-0.5 text-[10px] text-gray-500">
+                {snapshot.goodCount}/{snapshot.totalInspected} 件
               </div>
             </div>
-          )}
+            <div className="rounded-lg border border-gray-700/30 bg-gray-800/50 p-3">
+              <div className="text-xs text-gray-400">生产节拍</div>
+              <div className="mt-1 font-mono text-xl font-bold text-amber-400">
+                {taktSec}s
+              </div>
+            </div>
+            <div className="rounded-lg border border-gray-700/30 bg-gray-800/50 p-3">
+              <div className="text-xs text-gray-400">故障时长</div>
+              <div className="mt-1 font-mono text-xl font-bold text-red-400">
+                {formatDuration(snapshot.faultDuration)}
+              </div>
+            </div>
+          </div>
 
           <div>
             <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-gray-400">
@@ -154,7 +162,7 @@ export function SnapshotModal() {
             </div>
           </div>
 
-          {snapshot.bottleneckMachineId && (
+          {bottleneckMachine && (
             <div
               className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3"
               style={{ borderStyle: 'dashed' }}
@@ -164,7 +172,7 @@ export function SnapshotModal() {
                 <span className="text-xs font-semibold text-amber-400">瓶颈设备</span>
               </div>
               <div className="mt-1 text-sm text-amber-200">
-                {snapshot.bottleneckMachineId} 为当时效率最低的设备，需重点关注
+                {bottleneckMachine.name} (ID: {bottleneckMachine.id}) 为当时效率最低的设备（{bottleneckMachine.efficiency.toFixed(0)}%），需重点关注
               </div>
             </div>
           )}

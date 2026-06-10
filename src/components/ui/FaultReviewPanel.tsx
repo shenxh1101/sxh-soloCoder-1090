@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   X,
   AlertTriangle,
@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useProductionStore } from '../../store/useProductionStore';
 import { STATUS_COLORS, STATUS_LABELS, THEME_COLORS } from '../../utils/constants';
-import { formatDuration } from '../../utils/efficiencyCalculator';
+import { formatDuration, getLiveTotalFaultDuration } from '../../utils/efficiencyCalculator';
 
 interface FaultRecordWithMachine {
   machineId: string;
@@ -33,20 +33,18 @@ export function FaultReviewPanel() {
     setReviewMachineFilter,
   } = useProductionStore();
   const [machineDropdownOpen, setMachineDropdownOpen] = useState(false);
+  const [, setTick] = useState(0);
 
-  if (activeView !== 'review') return null;
+  useEffect(() => {
+    if (activeView !== 'review') return;
+    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, [activeView]);
 
   const summaryStats = useMemo(() => {
     const totalFaultCount = machines.reduce((sum, m) => sum + m.faultCount, 0);
 
-    const now = Date.now();
-    const totalFaultDuration = machines.reduce((sum, m) => {
-      let duration = m.totalFaultDuration;
-      if (m.status === 'fault' && m.faultTime) {
-        duration += now - m.faultTime;
-      }
-      return sum + duration;
-    }, 0);
+    const totalFaultDuration = getLiveTotalFaultDuration(machines, 0);
 
     const totalLostProduction = machines.reduce(
       (sum, m) =>
@@ -92,6 +90,8 @@ export function FaultReviewPanel() {
   }, [machines, reviewTimeFilter, reviewMachineFilter]);
 
   const selectedMachine = machines.find((m) => m.id === reviewMachineFilter);
+
+  if (activeView !== 'review') return null;
 
   return (
     <div className="fixed right-4 top-20 bottom-[260px] z-40 w-[500px] overflow-y-auto">

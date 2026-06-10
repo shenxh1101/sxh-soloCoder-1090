@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { useProductionStore } from '../../store/useProductionStore';
 import { STATUS_COLORS, STATUS_LABELS, THEME_COLORS } from '../../utils/constants';
-import { formatDuration } from '../../utils/efficiencyCalculator';
+import { formatDuration, getLiveTotalFaultDuration } from '../../utils/efficiencyCalculator';
 
 ChartJS.register(
   CategoryScale,
@@ -65,10 +65,13 @@ export function ProductionAnalysisPanel() {
 
   const lineChartRef = useRef<ChartJS<'line'>>(null);
   const barChartRef = useRef<ChartJS<'bar'>>(null);
+  const [, setTick] = useState(0);
 
-  if (activeView !== 'analysis') return null;
-
-  const handleClose = () => setActiveView('realtime');
+  useEffect(() => {
+    if (activeView !== 'analysis') return;
+    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, [activeView]);
 
   const filteredData = useMemo(() => {
     const now = Date.now();
@@ -86,15 +89,10 @@ export function ProductionAnalysisPanel() {
     [machines, bottleneckMachineId]
   );
 
-  const liveFaultTime = useMemo(() => {
-    let total = totalFaultTime;
-    for (const m of machines) {
-      if (m.status === 'fault' && m.faultTime) {
-        total += Date.now() - m.faultTime;
-      }
-    }
-    return total;
-  }, [machines, totalFaultTime]);
+  const liveFaultTime = useMemo(
+    () => getLiveTotalFaultDuration(machines, totalFaultTime),
+    [machines, totalFaultTime]
+  );
 
   const runningMachines = useMemo(
     () => machines.filter((m) => m.status !== 'fault').length,
@@ -366,6 +364,8 @@ export function ProductionAnalysisPanel() {
     return items;
   }, [bottleneck, currentQuality, liveFaultTime, currentTaktTime, idealCycleTime, totalProduced]);
 
+  if (activeView !== 'analysis') return null;
+
   return (
     <div className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm">
       <div className="fixed right-0 top-0 h-full w-[680px] overflow-y-auto border-l border-gray-700/50 bg-gray-900/95 shadow-2xl">
@@ -383,7 +383,7 @@ export function ProductionAnalysisPanel() {
             </div>
           </div>
           <button
-            onClick={handleClose}
+            onClick={() => setActiveView('realtime')}
             className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
           >
             <X className="h-5 w-5" />

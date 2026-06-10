@@ -1,5 +1,23 @@
 import type { Machine, ProductionRecord } from '../types/production';
 
+export function getLiveTotalFaultDuration(machines: Machine[], totalFaultTime: number = 0): number {
+  let total = totalFaultTime;
+  const now = Date.now();
+  for (const m of machines) {
+    if (m.status === 'fault' && m.faultTime) {
+      total += now - m.faultTime;
+    }
+  }
+  return total;
+}
+
+export function getLiveMachineFaultDuration(machine: Machine): number {
+  if (machine.status === 'fault' && machine.faultTime) {
+    return machine.totalFaultDuration + (Date.now() - machine.faultTime);
+  }
+  return machine.totalFaultDuration;
+}
+
 export function calculateOEE(
   plannedRunTime: number,
   faultTime: number,

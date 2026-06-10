@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -22,36 +22,37 @@ import {
 } from 'lucide-react';
 import { useProductionStore } from '../../store/useProductionStore';
 import { STATUS_COLORS, STATUS_LABELS, THEME_COLORS } from '../../utils/constants';
-import { formatDuration } from '../../utils/efficiencyCalculator';
+import { formatDuration, getLiveMachineFaultDuration } from '../../utils/efficiencyCalculator';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler);
 
 export function MachineDetailPanel() {
   const { selectedMachineId, selectMachine, machines, triggerFault, resetFault } = useProductionStore();
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!selectedMachineId) return;
+    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, [selectedMachineId]);
 
   const machine = useMemo(
-    () => machines.find((m) => m.id === selectedMachineId),
+    () => machines.find((m) => m.id === selectedMachineId) || null,
     [machines, selectedMachineId]
   );
 
-  if (!machine || !selectedMachineId) return null;
-
-  const statusColor = STATUS_COLORS[machine.status];
-  const statusLabel = STATUS_LABELS[machine.status];
-
   const liveFaultDuration = useMemo(() => {
-    if (machine.status === 'fault' && machine.faultTime) {
-      return machine.totalFaultDuration + (Date.now() - machine.faultTime);
-    }
-    return machine.totalFaultDuration;
+    if (!machine) return 0;
+    return getLiveMachineFaultDuration(machine);
   }, [machine]);
 
-  const totalLostProduction = useMemo(
-    () => machine.faultRecords.reduce((sum, fr) => sum + fr.lostProduction, 0),
-    [machine.faultRecords]
-  );
+  const totalLostProduction = useMemo(() => {
+    if (!machine) return 0;
+    return machine.faultRecords.reduce((sum, fr) => sum + fr.lostProduction, 0);
+  }, [machine]);
 
   const chartData = useMemo(() => {
+    if (!machine) return { labels: [], datasets: [] };
     const history = machine.efficiencyHistory.slice(-30);
     return {
       labels: history.map((h) =>
@@ -74,7 +75,7 @@ export function MachineDetailPanel() {
         },
       ],
     };
-  }, [machine.efficiencyHistory]);
+  }, [machine]);
 
   const chartOptions = {
     responsive: true,
@@ -97,6 +98,10 @@ export function MachineDetailPanel() {
     },
   };
 
+  if (!machine) return null;
+
+  const statusColor = STATUS_COLORS[machine.status];
+  const statusLabel = STATUS_LABELS[machine.status];
   const recentFaults = machine.faultRecords.slice(-5).reverse();
 
   return (
@@ -189,7 +194,7 @@ export function MachineDetailPanel() {
               效率变化趋势
             </div>
             <div className="h-24 rounded-lg border border-gray-700/30 bg-gray-800/30 p-1.5">
-              <Line data={chartData} options={chartOptions} />
+              <Line key={machine.id} data={chartData} options={chartOptions} />
             </div>
           </div>
 

@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Activity, Clock, Package, TrendingUp, AlertCircle, Gauge, Target, Zap } from 'lucide-react';
 import { useProductionStore } from '../../store/useProductionStore';
-import { formatDuration, formatNumber } from '../../utils/efficiencyCalculator';
+import { formatDuration, formatNumber, getLiveTotalFaultDuration } from '../../utils/efficiencyCalculator';
 import { THEME_COLORS } from '../../utils/constants';
 
 export function EfficiencyPanel() {
@@ -19,20 +19,20 @@ export function EfficiencyPanel() {
     bottleneckMachineId,
     machines,
   } = useProductionStore();
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const runningMachines = machines.filter((m) => m.status === 'running').length;
   const faultMachines = machines.filter((m) => m.status === 'fault').length;
 
-  const liveFaultTime = useMemo(() => {
-    const now = Date.now();
-    let t = totalFaultTime;
-    for (const m of machines) {
-      if (m.status === 'fault' && m.faultTime) {
-        t += now - m.faultTime;
-      }
-    }
-    return t;
-  }, [totalFaultTime, machines]);
+  const liveFaultTime = useMemo(
+    () => getLiveTotalFaultDuration(machines, totalFaultTime),
+    [machines, totalFaultTime]
+  );
 
   const bottleneck = useMemo(() => {
     if (!bottleneckMachineId) return null;
