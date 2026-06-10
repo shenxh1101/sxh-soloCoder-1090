@@ -6,7 +6,9 @@ import { useProductionStore } from '../../store/useProductionStore';
 
 export function ConveyorBelt() {
   const beltRef = useRef<THREE.Mesh>(null);
-  const { globalSpeed, isRunning } = useProductionStore();
+  const glowRef = useRef<THREE.Mesh>(null);
+  const { globalSpeed, isRunning, machines } = useProductionStore();
+  const hasFault = machines.some((m) => m.status === 'fault');
 
   const beltMaterial = useMemo(() => {
     return new THREE.MeshStandardMaterial({
@@ -33,10 +35,22 @@ export function ConveyorBelt() {
   }, []);
 
   useFrame((_, delta) => {
-    if (beltRef.current && isRunning) {
+    if (beltRef.current && isRunning && !hasFault) {
       const material = beltRef.current.material as THREE.MeshStandardMaterial;
       if (material.map) {
         material.map.offset.x += delta * globalSpeed * 0.5;
+      }
+    }
+    if (glowRef.current) {
+      const mat = glowRef.current.material as THREE.MeshStandardMaterial;
+      if (hasFault) {
+        mat.color.set('#F53F3F');
+        mat.emissive.set('#F53F3F');
+        mat.emissiveIntensity = 0.1;
+      } else {
+        mat.color.set('#165DFF');
+        mat.emissive.set('#165DFF');
+        mat.emissiveIntensity = 0.2;
       }
     }
   });
@@ -89,7 +103,7 @@ export function ConveyorBelt() {
         <primitive object={beltMaterial} attach="material" />
       </mesh>
 
-      <mesh position={[0, 0.11, 0]}>
+      <mesh ref={glowRef} position={[0, 0.11, 0]}>
         <boxGeometry args={[CONVEYOR_LENGTH, 0.01, CONVEYOR_WIDTH]} />
         <meshStandardMaterial
           color="#165DFF"

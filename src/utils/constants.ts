@@ -19,6 +19,10 @@ export const INITIAL_MACHINES: Machine[] = MACHINE_POSITIONS.map((m) => ({
   processedCount: 0,
   efficiency: 100,
   faultTime: null,
+  faultCount: 0,
+  totalFaultDuration: 0,
+  faultRecords: [],
+  efficiencyHistory: [],
 }));
 
 export const STATUS_COLORS = {

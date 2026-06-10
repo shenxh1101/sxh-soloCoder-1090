@@ -1,28 +1,71 @@
-import type { ProductionRecord } from '../types/production';
+import type { ProductionRecord, Machine } from '../types/production';
 
-export function exportProductionDataToCSV(records: ProductionRecord[]): void {
-  if (records.length === 0) {
+function formatMachineStatus(status: Machine['status']): string {
+  switch (status) {
+    case 'running':
+      return '运行中';
+    case 'idle':
+      return '空闲';
+    case 'fault':
+      return '故障';
+  }
+}
+
+export function exportProductionDataToCSV(records: ProductionRecord[], machines: Machine[]): void {
+  if (records.length === 0 && machines.length === 0) {
     alert('暂无生产数据可导出');
     return;
   }
 
-  const headers = ['时间', '生产量', '效率(%)', 'OEE(%)', '故障时长(秒)'];
-  const rows = records.map((record) => [
-    new Date(record.timestamp).toLocaleString('zh-CN'),
-    record.count.toString(),
-    record.efficiency.toFixed(2),
-    record.oee.toFixed(2),
-    (record.faultDuration / 1000).toFixed(2),
-  ]);
+  const lines: string[] = [];
 
-  const csvContent = [headers, ...rows].map((row) => row.join(',')).join('\n');
+  lines.push('=== 生产线汇总数据 ===');
+  const summaryHeaders = ['时间', '生产量', '效率(%)', 'OEE(%)', '故障时长(秒)'];
+  lines.push(summaryHeaders.join(','));
+  for (const record of records) {
+    lines.push([
+      new Date(record.timestamp).toLocaleString('zh-CN'),
+      record.count.toString(),
+      record.efficiency.toFixed(2),
+      record.oee.toFixed(2),
+      (record.faultDuration / 1000).toFixed(2),
+    ].join(','));
+  }
+
+  lines.push('');
+  lines.push('=== 设备明细数据 ===');
+  const machineHeaders = ['设备名称', '当前状态', '加工数量', '故障次数', '累计故障时长(秒)', '最近故障时间'];
+  lines.push(machineHeaders.join(','));
+  for (const machine of machines) {
+    let totalFaultDuration = machine.totalFaultDuration;
+    if (machine.status === 'fault' && machine.faultTime !== null) {
+      totalFaultDuration += Date.now() - machine.faultTime;
+    }
+    const lastFaultRecord = machine.faultRecords.length > 0
+      ? machine.faultRecords[machine.faultRecords.length - 1]
+      : null;
+    const lastFaultTime = lastFaultRecord
+      ? new Date(lastFaultRecord.timestamp).toLocaleString('zh-CN')
+      : '无';
+    lines.push([
+      machine.name,
+      formatMachineStatus(machine.status),
+      machine.processedCount.toString(),
+      machine.faultCount.toString(),
+      (totalFaultDuration / 1000).toFixed(2),
+      lastFaultTime,
+    ].join(','));
+  }
+
+  const csvContent = lines.join('\n');
   const BOM = '\uFEFF';
   const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   link.setAttribute('href', url);
-  link.setAttribute('download', `production-data-${timestamp}.csv`);
+  link.setAttribute('download', `产线A_生产数据_${dateStr}.csv`);
   link.style.visibility = 'hidden';
   document.body.appendChild(link);
   link.click();

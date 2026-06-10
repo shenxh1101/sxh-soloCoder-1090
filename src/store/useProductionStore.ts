@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ProductionState, ProductionActions, Workpiece, Machine } from '../types/production';
+import type { ProductionState, ProductionActions, Workpiece, Machine, FaultRecord, MachineEfficiencySnapshot } from '../types/production';
 import {
   INITIAL_MACHINES,
   CONVEYOR_LENGTH,
@@ -41,6 +41,7 @@ const createInitialState = (): ProductionState => ({
   idealCycleTime: IDEAL_CYCLE_TIME,
   maxWorkpieces: MAX_WORKPIECES,
   spawnInterval: SPAWN_INTERVAL,
+  selectedMachineId: null,
 });
 
 const getProgressPosition = (progress: number): [number, number, number] => {
@@ -48,15 +49,23 @@ const getProgressPosition = (progress: number): [number, number, number] => {
   return [x, 0.6, 0];
 };
 
-const getMachineProgressRange = (machineIndex: number): [number, number] => {
+const getMachineProgressThreshold = (machineIndex: number): number => {
   const machineSpacing = 0.2;
   const machineWidth = 0.1;
-  const start = 0.15 + machineIndex * (machineSpacing + machineWidth);
-  return [start, start + machineWidth];
+  return 0.15 + machineIndex * (machineSpacing + machineWidth);
 };
 
-const hasAnyFault = (machines: Machine[]): boolean => {
-  return machines.some((m) => m.status === 'fault');
+const getFaultProgressBlock = (machines: Machine[]): number | null => {
+  let blockAt: number | null = null;
+  for (let i = 0; i < machines.length; i++) {
+    if (machines[i].status === 'fault') {
+      const threshold = getMachineProgressThreshold(i);
+      if (blockAt === null || threshold < blockAt) {
+        blockAt = threshold;
+      }
+    }
+  }
+  return blockAt;
 };
 
 export const useProductionStore = create<ProductionState & ProductionActions>((set, get) => ({
@@ -69,8 +78,14 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
 
     const now = Date.now();
     const machine = machines[machineIndex];
-
     if (machine.status === 'fault') return;
+
+    const faultRecord: FaultRecord = {
+      id: `fault-${now}`,
+      timestamp: now,
+      resolvedAt: null,
+      duration: 0,
+    };
 
     const newAlerts = [
       ...alerts,
@@ -89,6 +104,8 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
       status: 'fault',
       faultTime: now,
       efficiency: 0,
+      faultCount: machine.faultCount + 1,
+      faultRecords: [...machine.faultRecords, faultRecord],
     };
 
     set({
@@ -108,35 +125,44 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
       const machineIndex = machines.findIndex((m) => m.id === machineId);
       if (machineIndex !== -1 && machines[machineIndex].status === 'fault') {
         const machine = machines[machineIndex];
+        let faultDuration = 0;
         if (machine.faultTime) {
-          const faultDuration = now - machine.faultTime;
-          set((state) => ({
-            totalFaultTime: state.totalFaultTime + faultDuration,
-          }));
+          faultDuration = now - machine.faultTime;
         }
+
+        const updatedFaultRecords = machine.faultRecords.map((fr) =>
+          fr.resolvedAt === null ? { ...fr, resolvedAt: now, duration: faultDuration } : fr
+        );
+
         newMachines[machineIndex] = {
           ...machine,
           status: 'running',
           faultTime: null,
           efficiency: 100,
+          totalFaultDuration: machine.totalFaultDuration + faultDuration,
+          faultRecords: updatedFaultRecords,
         };
         newAlerts = newAlerts.filter((a) => a.machineId !== machineId);
       }
     } else {
-      let totalAdditionalFaultTime = 0;
       newMachines = machines.map((m) => {
         if (m.status === 'fault' && m.faultTime) {
-          totalAdditionalFaultTime += now - m.faultTime;
-          return { ...m, status: 'running' as const, faultTime: null, efficiency: 100 };
+          const faultDuration = now - m.faultTime;
+          const updatedFaultRecords = m.faultRecords.map((fr) =>
+            fr.resolvedAt === null ? { ...fr, resolvedAt: now, duration: faultDuration } : fr
+          );
+          return {
+            ...m,
+            status: 'running' as const,
+            faultTime: null,
+            efficiency: 100,
+            totalFaultDuration: m.totalFaultDuration + faultDuration,
+            faultRecords: updatedFaultRecords,
+          };
         }
         return m;
       });
       newAlerts = [];
-      if (totalAdditionalFaultTime > 0) {
-        set((state) => ({
-          totalFaultTime: state.totalFaultTime + totalAdditionalFaultTime,
-        }));
-      }
     }
 
     set({
@@ -157,12 +183,20 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
     set({ isRunning: running });
   },
 
+  selectMachine: (machineId: string | null) => {
+    set({ selectedMachineId: machineId });
+  },
+
   spawnWorkpiece: () => {
-    const { workpieces, maxWorkpieces, globalSpeed, spawnInterval, isRunning } = get();
+    const { workpieces, maxWorkpieces, globalSpeed, spawnInterval, isRunning, machines } = get();
     const now = Date.now();
 
     if (!isRunning) return;
     if (workpieces.length >= maxWorkpieces) return;
+
+    const hasFault = machines.some((m) => m.status === 'fault');
+    if (hasFault) return;
+
     if (now - lastSpawnTime < spawnInterval / globalSpeed) return;
 
     lastSpawnTime = now;
@@ -184,63 +218,50 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
 
   updateWorkpieces: (deltaTime: number) => {
     const { workpieces, machines, globalSpeed, isRunning, idealCycleTime } = get();
-    const hasFault = hasAnyFault(machines);
 
     if (!isRunning) return;
 
     const effectiveDelta = deltaTime * globalSpeed;
     const progressPerSecond = WORKPIECE_SPEED / CONVEYOR_LENGTH;
 
+    const faultBlock = getFaultProgressBlock(machines);
+
     const sortedWorkpieces = [...workpieces].sort((a, b) => a.progress - b.progress);
 
     let producedThisUpdate = 0;
-    let passedThisUpdate = 0;
-    let totalInspected = 0;
     let newWorkpieces: Workpiece[] = [];
     let machinesToUpdate = [...machines];
 
-    for (let i = 0; i < sortedWorkpieces.length; i++) {
+    for (let i = sortedWorkpieces.length - 1; i >= 0; i--) {
       const wp = sortedWorkpieces[i];
       let newProgress = wp.progress;
 
-      const canMove = !hasFault || wp.progress < 0.4;
+      let nextProgress = wp.progress + progressPerSecond * effectiveDelta;
 
-      if (canMove) {
-        let nextProgress = wp.progress + progressPerSecond * effectiveDelta;
-        let blocked = false;
+      if (faultBlock !== null && nextProgress > faultBlock - 0.04) {
+        nextProgress = Math.min(nextProgress, faultBlock - 0.04);
+      }
 
-        if (i > 0) {
-          const prevWp = sortedWorkpieces[i - 1];
-          const minGap = 0.04;
-          if (nextProgress + minGap > prevWp.progress) {
-            nextProgress = prevWp.progress - minGap;
-            blocked = true;
-          }
-        }
-
-        if (blocked && hasFault) {
-          const blockingFaultMachine = machines.find(
-            (m, idx) => m.status === 'fault' && wp.progress < getMachineProgressRange(idx)[1]
-          );
-          if (blockingFaultMachine) {
-            newProgress = wp.progress;
-          } else {
-            newProgress = nextProgress;
-          }
-        } else {
-          newProgress = nextProgress;
+      if (i < sortedWorkpieces.length - 1) {
+        const aheadWp = sortedWorkpieces[i + 1];
+        const minGap = 0.04;
+        if (nextProgress + minGap > aheadWp.progress) {
+          nextProgress = aheadWp.progress - minGap;
         }
       }
+
+      nextProgress = Math.max(nextProgress, wp.progress - 0.0001);
+      newProgress = nextProgress;
 
       let newProcessed = wp.processed;
       let newMachineIndex = wp.machineIndex;
 
       for (let mi = 0; mi < machines.length - 1; mi++) {
-        const [start, end] = getMachineProgressRange(mi);
+        const threshold = getMachineProgressThreshold(mi);
         if (
           machines[mi].status !== 'fault' &&
-          wp.progress < start &&
-          newProgress >= start &&
+          wp.progress < threshold &&
+          newProgress >= threshold &&
           !wp.processed
         ) {
           newProcessed = true;
@@ -255,18 +276,14 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
       let newInspected = wp.inspected;
       let newPassed = wp.passed;
 
-      const inspectionRange = getMachineProgressRange(3);
+      const inspectionThreshold = getMachineProgressThreshold(3);
       if (
         machines[3].status !== 'fault' &&
-        wp.progress < inspectionRange[0] &&
-        newProgress >= inspectionRange[0]
+        wp.progress < inspectionThreshold &&
+        newProgress >= inspectionThreshold
       ) {
         newInspected = true;
         newPassed = Math.random() > 0.05;
-        totalInspected++;
-        if (newPassed) {
-          passedThisUpdate++;
-        }
         machinesToUpdate[3] = {
           ...machinesToUpdate[3],
           processedCount: machinesToUpdate[3].processedCount + 1,
@@ -288,7 +305,7 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
       });
     }
 
-    machinesToUpdate = machinesToUpdate.map((m, idx) => ({
+    machinesToUpdate = machinesToUpdate.map((m) => ({
       ...m,
       efficiency: calculateMachineEfficiency(m, get().totalRunTime / 1000 + deltaTime, idealCycleTime),
     }));
@@ -313,18 +330,26 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
       currentEfficiency,
       currentOEE,
       globalSpeed,
+      machines,
     } = get();
     const now = Date.now();
 
     if (now - lastRecordTime < DATA_RECORD_INTERVAL / globalSpeed) return;
     lastRecordTime = now;
 
+    let liveFaultTime = totalFaultTime;
+    for (const m of machines) {
+      if (m.status === 'fault' && m.faultTime) {
+        liveFaultTime += now - m.faultTime;
+      }
+    }
+
     const newRecord = {
       timestamp: now,
       count: totalProduced,
       efficiency: currentEfficiency,
       oee: currentOEE,
-      faultDuration: totalFaultTime,
+      faultDuration: liveFaultTime,
     };
 
     const newHistory = [...productionHistory, newRecord].slice(-MAX_HISTORY_RECORDS);
@@ -339,17 +364,25 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
       totalFaultTime,
       totalRunTime,
       idealCycleTime,
-      productionHistory,
+      machines,
     } = get();
 
+    const now = Date.now();
+    let liveFaultTime = totalFaultTime;
+    for (const m of machines) {
+      if (m.status === 'fault' && m.faultTime) {
+        liveFaultTime += now - m.faultTime;
+      }
+    }
+
     const plannedRunTime = totalRunTime > 0 ? totalRunTime : 1;
-    const actualRuntimeSec = (totalRunTime - totalFaultTime) / 1000;
+    const actualRuntimeSec = (totalRunTime - liveFaultTime) / 1000;
     const goodCount = Math.floor(totalProduced * 0.95);
     const totalCount = totalProduced > 0 ? totalProduced : 1;
 
     const oee = calculateOEE(
       plannedRunTime / 1000,
-      totalFaultTime / 1000,
+      liveFaultTime / 1000,
       totalProduced,
       idealCycleTime,
       actualRuntimeSec > 0 ? actualRuntimeSec : 1,
@@ -364,9 +397,24 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
       idealOutputPerSecond
     );
 
+    const updatedMachines = machines.map((m) => {
+      const snapshot: MachineEfficiencySnapshot = {
+        timestamp: now,
+        efficiency: m.efficiency,
+      };
+      const trimmedHistory = m.efficiencyHistory.length > 60
+        ? m.efficiencyHistory.slice(-60)
+        : m.efficiencyHistory;
+      return {
+        ...m,
+        efficiencyHistory: [...trimmedHistory, snapshot],
+      };
+    });
+
     set({
       currentOEE: oee,
       currentEfficiency: efficiency,
+      machines: updatedMachines,
     });
   },
 
@@ -383,8 +431,8 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
   },
 
   exportToCSV: () => {
-    const { productionHistory } = get();
-    exportProductionDataToCSV(productionHistory);
+    const { productionHistory, machines } = get();
+    exportProductionDataToCSV(productionHistory, machines);
   },
 
   resetAll: () => {

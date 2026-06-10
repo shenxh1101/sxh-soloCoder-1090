@@ -13,15 +13,13 @@ interface MachineProps {
 export function Machine({ machine }: MachineProps) {
   const groupRef = useRef<THREE.Group>(null);
   const lightRef = useRef<THREE.PointLight>(null);
-  const { triggerFault } = useProductionStore();
+  const { selectMachine } = useProductionStore();
 
   const statusColor = STATUS_COLORS[machine.status];
 
   const handleClick = (e: any) => {
     e.stopPropagation();
-    if (machine.status !== 'fault') {
-      triggerFault(machine.id);
-    }
+    selectMachine(machine.id);
   };
 
   const bodyMaterial = useMemo(() => {
@@ -63,13 +61,6 @@ export function Machine({ machine }: MachineProps) {
       ref={groupRef}
       position={machine.position}
       onClick={handleClick}
-      onPointerOver={(e) => {
-        e.stopPropagation();
-        document.body.style.cursor = 'pointer';
-      }}
-      onPointerOut={() => {
-        document.body.style.cursor = 'default';
-      }}
     >
       <pointLight
         ref={lightRef}
@@ -182,11 +173,7 @@ export function Machine({ machine }: MachineProps) {
               {machine.efficiency.toFixed(1)}%
             </span>
           </div>
-          {machine.status === 'fault' && (
-            <div className="mt-2 animate-pulse text-center text-xs font-bold text-red-400">
-              点击重置故障
-            </div>
-          )}
+          <div className="mt-1 text-center text-xs text-gray-500">点击查看详情</div>
         </div>
       </Html>
     </group>

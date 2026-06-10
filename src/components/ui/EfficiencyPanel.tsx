@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Activity, Clock, Package, TrendingUp, AlertCircle, Gauge } from 'lucide-react';
 import { useProductionStore } from '../../store/useProductionStore';
 import { formatDuration, formatNumber } from '../../utils/efficiencyCalculator';
@@ -16,6 +17,17 @@ export function EfficiencyPanel() {
 
   const runningMachines = machines.filter((m) => m.status === 'running').length;
   const faultMachines = machines.filter((m) => m.status === 'fault').length;
+
+  const liveFaultTime = useMemo(() => {
+    const now = Date.now();
+    let t = totalFaultTime;
+    for (const m of machines) {
+      if (m.status === 'fault' && m.faultTime) {
+        t += now - m.faultTime;
+      }
+    }
+    return t;
+  }, [totalFaultTime, machines]);
 
   const getOEEColor = (oee: number) => {
     if (oee >= 85) return THEME_COLORS.success;
@@ -61,9 +73,9 @@ export function EfficiencyPanel() {
     {
       icon: <AlertCircle className="h-5 w-5" />,
       label: '故障时间',
-      value: formatDuration(totalFaultTime),
+      value: formatDuration(liveFaultTime),
       color: faultMachines > 0 ? THEME_COLORS.error : THEME_COLORS.textSecondary,
-      subValue: `${faultMachines} 台故障`,
+      subValue: `停机损失 ${(totalRunTime > 0 ? (liveFaultTime / totalRunTime * 100) : 0).toFixed(1)}%`,
     },
     {
       icon: <Activity className="h-5 w-5" />,

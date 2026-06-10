@@ -2,6 +2,7 @@ import { Scene } from './components/three/Scene';
 import { AlertBar } from './components/ui/AlertBar';
 import { ControlPanel } from './components/ui/ControlPanel';
 import { EfficiencyPanel } from './components/ui/EfficiencyPanel';
+import { MachineDetailPanel } from './components/ui/MachineDetailPanel';
 import { ProductionChart } from './components/ui/ProductionChart';
 import { Factory, Cpu, Activity } from 'lucide-react';
 
@@ -36,14 +37,15 @@ export default function App() {
       <AlertBar />
       <ProductionChart />
       <ControlPanel />
+      <MachineDetailPanel />
       <EfficiencyPanel />
 
       <div className="absolute right-4 bottom-[240px] z-30 rounded-lg border border-gray-700/50 bg-gray-900/70 px-3 py-2 text-xs text-gray-400 backdrop-blur-sm">
         <p className="mb-1 font-semibold text-gray-300">操作提示</p>
         <p>• 鼠标左键拖动：旋转视角</p>
         <p>• 鼠标滚轮：缩放</p>
-        <p>• 点击机器：触发故障模拟</p>
-        <p>• 点击告警/重置按钮：修复故障</p>
+        <p>• 点击机器：查看设备详情</p>
+        <p>• 详情面板中模拟/修复故障</p>
       </div>
     </div>
   );
