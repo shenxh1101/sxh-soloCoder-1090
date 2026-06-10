@@ -6,14 +6,16 @@ import { MachineDetailPanel } from './components/ui/MachineDetailPanel';
 import { ProductionChart } from './components/ui/ProductionChart';
 import { FaultReviewPanel } from './components/ui/FaultReviewPanel';
 import { ProductionAnalysisPanel } from './components/ui/ProductionAnalysisPanel';
+import { HistoryPlaybackPanel } from './components/ui/HistoryPlaybackPanel';
 import { SnapshotModal } from './components/ui/SnapshotModal';
 import { useProductionStore } from './store/useProductionStore';
-import { Factory, Cpu, Activity, BarChart3, Wrench } from 'lucide-react';
+import { Factory, Cpu, Activity, BarChart3, Wrench, History } from 'lucide-react';
 
 const VIEW_LABELS: Record<string, { label: string; icon: any }> = {
   realtime: { label: '实时监控', icon: Cpu },
   review: { label: '故障复盘', icon: Wrench },
   analysis: { label: '生产分析', icon: BarChart3 },
+  playback: { label: '历史回放', icon: History },
 };
 
 export default function App() {
@@ -58,6 +60,7 @@ export default function App() {
       <EfficiencyPanel />
       <FaultReviewPanel />
       <ProductionAnalysisPanel />
+      <HistoryPlaybackPanel />
       <SnapshotModal />
 
       <div className="absolute right-4 bottom-[240px] z-30 rounded-lg border border-gray-700/50 bg-gray-900/70 px-3 py-2 text-xs text-gray-400 backdrop-blur-sm">
@@ -66,7 +69,7 @@ export default function App() {
         <p>• 鼠标滚轮：缩放</p>
         <p>• 点击机器：查看设备详情</p>
         <p>• 点击趋势图：查看历史快照</p>
-        <p>• 控制面板切换：实时/复盘/分析</p>
+        <p>• 控制面板切换：实时/复盘/分析/回放</p>
       </div>
     </div>
   );

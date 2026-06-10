@@ -141,11 +141,13 @@ export function ProductionAnalysisPanel() {
         backgroundColor: `${THEME_COLORS.primary}20`,
         fill: true,
         tension: 0.4,
-        pointRadius: 0,
+        pointRadius: (ctx: any) => ctx.dataIndex === selectedIndex ? 5 : 0,
         pointHoverRadius: 5,
         borderWidth: 2,
         pointBackgroundColor: (ctx: any) =>
           ctx.dataIndex === selectedIndex ? THEME_COLORS.warning : undefined,
+        pointBorderColor: (ctx: any) =>
+          ctx.dataIndex === selectedIndex ? '#fff' : undefined,
       },
       {
         label: 'OEE (%)',
@@ -154,12 +156,14 @@ export function ProductionAnalysisPanel() {
         backgroundColor: 'transparent',
         fill: false,
         tension: 0.4,
-        pointRadius: 0,
+        pointRadius: (ctx: any) => ctx.dataIndex === selectedIndex ? 5 : 0,
         pointHoverRadius: 5,
         borderWidth: 2,
         yAxisID: 'y1',
         pointBackgroundColor: (ctx: any) =>
           ctx.dataIndex === selectedIndex ? THEME_COLORS.warning : undefined,
+        pointBorderColor: (ctx: any) =>
+          ctx.dataIndex === selectedIndex ? '#fff' : undefined,
       },
     ],
   };
@@ -169,6 +173,13 @@ export function ProductionAnalysisPanel() {
     maintainAspectRatio: false,
     animation: { duration: 300 },
     interaction: { mode: 'index' as const, intersect: false },
+    onClick: (_evt: any, elements: any) => {
+      if (elements.length > 0) {
+        const idx = elements[0].index;
+        const ts = filteredData[idx].timestamp;
+        setSelectedSnapshot(ts);
+      }
+    },
     plugins: {
       legend: {
         position: 'top' as const,
@@ -195,13 +206,6 @@ export function ProductionAnalysisPanel() {
             return ts ? new Date(ts).toLocaleString('zh-CN') : '';
           },
         },
-      },
-      onClick: (_evt: any, elements: any) => {
-        if (elements.length > 0) {
-          const idx = elements[0].index;
-          const ts = filteredData[idx].timestamp;
-          setSelectedSnapshot(ts);
-        }
       },
     },
     scales: {

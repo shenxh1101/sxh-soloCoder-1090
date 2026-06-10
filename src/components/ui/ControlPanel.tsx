@@ -7,6 +7,7 @@ import {
   Download,
   Zap,
   Settings,
+  History,
 } from 'lucide-react';
 import { useProductionStore } from '../../store/useProductionStore';
 import { SPEED_OPTIONS, THEME_COLORS } from '../../utils/constants';
@@ -39,6 +40,7 @@ export function ControlPanel() {
     { key: 'realtime', label: '实时监控' },
     { key: 'review', label: '故障复盘' },
     { key: 'analysis', label: '生产分析' },
+    { key: 'playback', label: '历史回放' },
   ];
 
   return (

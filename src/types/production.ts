@@ -2,7 +2,7 @@ export type MachineStatus = 'running' | 'idle' | 'fault';
 
 export type CameraMode = 'overview' | 'firstPerson';
 
-export type ActiveView = 'realtime' | 'review' | 'analysis';
+export type ActiveView = 'realtime' | 'review' | 'analysis' | 'playback';
 
 export type ReviewTimeFilter = 'today' | 'hour' | 'all';
 

@@ -1,4 +1,5 @@
 import type { ProductionRecord, Machine } from '../types/production';
+import { getLiveMachineFaultDuration } from './efficiencyCalculator';
 
 function formatMachineStatus(status: Machine['status']): string {
   switch (status) {
@@ -37,10 +38,7 @@ export function exportProductionDataToCSV(records: ProductionRecord[], machines:
   const machineHeaders = ['设备名称', '当前状态', '加工数量', '故障次数', '累计故障时长(秒)', '损失产量(累计)', '最近故障时间'];
   lines.push(machineHeaders.join(','));
   for (const machine of machines) {
-    let totalFaultDuration = machine.totalFaultDuration;
-    if (machine.status === 'fault' && machine.faultTime !== null) {
-      totalFaultDuration += Date.now() - machine.faultTime;
-    }
+    const totalFaultDuration = getLiveMachineFaultDuration(machine);
     const totalLostProduction = machine.faultRecords.reduce((sum, fr) => sum + fr.lostProduction, 0);
     const lastFaultRecord = machine.faultRecords.length > 0
       ? machine.faultRecords[machine.faultRecords.length - 1]
@@ -84,6 +82,26 @@ export function exportProductionDataToCSV(records: ProductionRecord[], machines:
         productionAtResolve,
       ].join(','));
     }
+  }
+
+  lines.push('');
+  lines.push('=== 故障汇总统计 ===');
+  const faultSummaryHeaders = ['设备名称', '故障次数', '平均修复时长(秒)', '累计停机时长(秒)', '累计损失产量(件)'];
+  lines.push(faultSummaryHeaders.join(','));
+  for (const machine of machines) {
+    const resolvedFaults = machine.faultRecords.filter(fr => fr.resolvedAt);
+    const averageRepairDuration = resolvedFaults.length > 0
+      ? (resolvedFaults.reduce((sum, fr) => sum + fr.duration, 0) / resolvedFaults.length / 1000).toFixed(2)
+      : '0';
+    const totalFaultDurationSec = (getLiveMachineFaultDuration(machine) / 1000).toFixed(2);
+    const totalLostProduction = machine.faultRecords.reduce((sum, fr) => sum + fr.lostProduction, 0);
+    lines.push([
+      machine.name,
+      machine.faultCount.toString(),
+      averageRepairDuration,
+      totalFaultDurationSec,
+      totalLostProduction.toString(),
+    ].join(','));
   }
 
   const csvContent = lines.join('\n');
