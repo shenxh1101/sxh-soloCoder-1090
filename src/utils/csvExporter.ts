@@ -34,13 +34,14 @@ export function exportProductionDataToCSV(records: ProductionRecord[], machines:
 
   lines.push('');
   lines.push('=== 设备明细数据 ===');
-  const machineHeaders = ['设备名称', '当前状态', '加工数量', '故障次数', '累计故障时长(秒)', '最近故障时间'];
+  const machineHeaders = ['设备名称', '当前状态', '加工数量', '故障次数', '累计故障时长(秒)', '损失产量(累计)', '最近故障时间'];
   lines.push(machineHeaders.join(','));
   for (const machine of machines) {
     let totalFaultDuration = machine.totalFaultDuration;
     if (machine.status === 'fault' && machine.faultTime !== null) {
       totalFaultDuration += Date.now() - machine.faultTime;
     }
+    const totalLostProduction = machine.faultRecords.reduce((sum, fr) => sum + fr.lostProduction, 0);
     const lastFaultRecord = machine.faultRecords.length > 0
       ? machine.faultRecords[machine.faultRecords.length - 1]
       : null;
@@ -53,8 +54,36 @@ export function exportProductionDataToCSV(records: ProductionRecord[], machines:
       machine.processedCount.toString(),
       machine.faultCount.toString(),
       (totalFaultDuration / 1000).toFixed(2),
+      totalLostProduction.toString(),
       lastFaultTime,
     ].join(','));
+  }
+
+  lines.push('');
+  lines.push('=== 故障复盘记录 ===');
+  const faultHeaders = ['设备名称', '故障开始时间', '修复时间', '持续时长(秒)', '损失产量(件)', '故障时产量', '修复时产量'];
+  lines.push(faultHeaders.join(','));
+  for (const machine of machines) {
+    for (const fr of machine.faultRecords) {
+      const resolveTime = fr.resolvedAt
+        ? new Date(fr.resolvedAt).toLocaleString('zh-CN')
+        : '未修复';
+      const duration = fr.resolvedAt
+        ? (fr.duration / 1000).toFixed(2)
+        : ((Date.now() - fr.timestamp) / 1000).toFixed(2);
+      const productionAtResolve = fr.resolvedAt
+        ? fr.productionAtResolve.toString()
+        : '未修复';
+      lines.push([
+        machine.name,
+        new Date(fr.timestamp).toLocaleString('zh-CN'),
+        resolveTime,
+        duration,
+        fr.lostProduction.toString(),
+        fr.productionAtFault.toString(),
+        productionAtResolve,
+      ].join(','));
+    }
   }
 
   const csvContent = lines.join('\n');

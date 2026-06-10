@@ -2,11 +2,26 @@ export type MachineStatus = 'running' | 'idle' | 'fault';
 
 export type CameraMode = 'overview' | 'firstPerson';
 
+export type ActiveView = 'realtime' | 'review' | 'analysis';
+
+export type ReviewTimeFilter = 'today' | 'hour' | 'all';
+
+export interface MachineStateSnapshot {
+  id: string;
+  name: string;
+  status: MachineStatus;
+  processedCount: number;
+  efficiency: number;
+}
+
 export interface FaultRecord {
   id: string;
   timestamp: number;
   resolvedAt: number | null;
   duration: number;
+  lostProduction: number;
+  productionAtFault: number;
+  productionAtResolve: number;
 }
 
 export interface MachineEfficiencySnapshot {
@@ -48,9 +63,14 @@ export interface Alert {
 export interface ProductionRecord {
   timestamp: number;
   count: number;
+  goodCount: number;
+  totalInspected: number;
   efficiency: number;
   oee: number;
   faultDuration: number;
+  taktTime: number;
+  machineStates: MachineStateSnapshot[];
+  bottleneckMachineId: string | null;
 }
 
 export interface ProductionState {
@@ -61,15 +81,24 @@ export interface ProductionState {
   globalSpeed: number;
   isRunning: boolean;
   totalProduced: number;
+  totalInspected: number;
+  totalGood: number;
   totalFaultTime: number;
   totalRunTime: number;
   currentOEE: number;
   currentEfficiency: number;
+  currentQuality: number;
+  currentTaktTime: number;
+  bottleneckMachineId: string | null;
   cameraMode: CameraMode;
   idealCycleTime: number;
   maxWorkpieces: number;
   spawnInterval: number;
   selectedMachineId: string | null;
+  selectedSnapshotTimestamp: number | null;
+  activeView: ActiveView;
+  reviewTimeFilter: ReviewTimeFilter;
+  reviewMachineFilter: string | null;
 }
 
 export interface ProductionActions {
@@ -79,6 +108,10 @@ export interface ProductionActions {
   setCameraMode: (mode: CameraMode) => void;
   setIsRunning: (running: boolean) => void;
   selectMachine: (machineId: string | null) => void;
+  setSelectedSnapshot: (timestamp: number | null) => void;
+  setActiveView: (view: ActiveView) => void;
+  setReviewTimeFilter: (filter: ReviewTimeFilter) => void;
+  setReviewMachineFilter: (machineId: string | null) => void;
   spawnWorkpiece: () => void;
   updateWorkpieces: (deltaTime: number) => void;
   recordProductionData: () => void;

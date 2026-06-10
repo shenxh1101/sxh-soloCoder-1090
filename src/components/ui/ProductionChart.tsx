@@ -28,7 +28,7 @@ ChartJS.register(
 const ONE_HOUR_MS = 3600000;
 
 export function ProductionChart() {
-  const { productionHistory } = useProductionStore();
+  const { productionHistory, selectedSnapshotTimestamp, setSelectedSnapshot } = useProductionStore();
   const chartRef = useRef<ChartJS<'line'>>(null);
 
   const filteredData = useMemo(() => {
@@ -36,6 +36,11 @@ export function ProductionChart() {
     const windowStart = now - ONE_HOUR_MS;
     return productionHistory.filter((r) => r.timestamp >= windowStart);
   }, [productionHistory]);
+
+  const selectedIndex = useMemo(() => {
+    if (!selectedSnapshotTimestamp) return -1;
+    return filteredData.findIndex((r) => r.timestamp === selectedSnapshotTimestamp);
+  }, [selectedSnapshotTimestamp, filteredData]);
 
   const incrementalData = useMemo(() => {
     if (filteredData.length === 0) return { labels: [], counts: [], oees: [] };
@@ -70,6 +75,8 @@ export function ProductionChart() {
         pointRadius: 0,
         pointHoverRadius: 4,
         borderWidth: 2,
+        pointBackgroundColor: (ctx: any) =>
+          ctx.dataIndex === selectedIndex ? THEME_COLORS.warning : undefined,
       },
       {
         label: 'OEE (%)',
@@ -82,6 +89,8 @@ export function ProductionChart() {
         pointHoverRadius: 4,
         borderWidth: 2,
         yAxisID: 'y1',
+        pointBackgroundColor: (ctx: any) =>
+          ctx.dataIndex === selectedIndex ? THEME_COLORS.warning : undefined,
       },
     ],
   };
@@ -110,6 +119,30 @@ export function ProductionChart() {
         padding: 12,
         cornerRadius: 8,
         displayColors: true,
+        callbacks: {
+          title: (tooltipItems: any[]) => {
+            if (tooltipItems.length === 0) return '';
+            const idx = tooltipItems[0].dataIndex;
+            const ts = filteredData[idx]?.timestamp;
+            return ts
+              ? new Date(ts).toLocaleString('zh-CN', {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })
+              : '';
+          },
+        },
+      },
+      onClick: (_evt: any, elements: any) => {
+        if (elements.length > 0) {
+          const idx = elements[0].index;
+          const ts = filteredData[idx].timestamp;
+          setSelectedSnapshot(ts);
+        }
       },
     },
     scales: {
@@ -163,7 +196,7 @@ export function ProductionChart() {
     if (filteredData.length < 2) return '不足1分钟';
     const span = filteredData[filteredData.length - 1].timestamp - filteredData[0].timestamp;
     const mins = Math.round(span / 60000);
-    return mins >= 60 ? `过去${Math.round(mins / 60 * 10) / 10}小时` : `过去${mins}分钟`;
+    return mins >= 60 ? `过去${Math.round((mins / 60) * 10) / 10}小时` : `过去${mins}分钟`;
   }, [filteredData]);
 
   return (
@@ -186,6 +219,9 @@ export function ProductionChart() {
           <div className="text-gray-500">
             更新间隔: <span className="font-mono text-gray-300">5s</span>
           </div>
+        </div>
+        <div className="mt-2 text-center text-xs text-gray-500">
+          点击数据点查看当时设备状态
         </div>
       </div>
     </div>

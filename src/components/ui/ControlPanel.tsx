@@ -6,11 +6,11 @@ import {
   Eye,
   Download,
   Zap,
-  FastForward,
   Settings,
 } from 'lucide-react';
 import { useProductionStore } from '../../store/useProductionStore';
 import { SPEED_OPTIONS, THEME_COLORS } from '../../utils/constants';
+import type { ActiveView } from '../../types/production';
 
 export function ControlPanel() {
   const {
@@ -23,6 +23,8 @@ export function ControlPanel() {
     isRunning,
     setIsRunning,
     resetAll,
+    activeView,
+    setActiveView,
   } = useProductionStore();
 
   const handleSpeedChange = (speed: number) => {
@@ -32,6 +34,12 @@ export function ControlPanel() {
   const handleCameraToggle = () => {
     setCameraMode(cameraMode === 'overview' ? 'firstPerson' : 'overview');
   };
+
+  const viewOptions: { key: ActiveView; label: string }[] = [
+    { key: 'realtime', label: '实时监控' },
+    { key: 'review', label: '故障复盘' },
+    { key: 'analysis', label: '生产分析' },
+  ];
 
   return (
     <div className="fixed right-4 top-1/2 z-40 -translate-y-1/2">
@@ -44,6 +52,32 @@ export function ControlPanel() {
         <div className="mb-1 flex items-center gap-2 border-b border-gray-700/50 pb-2">
           <Settings className="h-4 w-4 text-blue-400" />
           <span className="text-xs font-semibold text-gray-300">控制面板</span>
+        </div>
+
+        <div className="mb-2">
+          <div className="mb-1 flex items-center gap-1">
+            <Eye className="h-3 w-3 text-gray-400" />
+            <span className="text-xs text-gray-400">视图模式</span>
+          </div>
+          <div className="flex gap-1">
+            {viewOptions.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setActiveView(key)}
+                className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-all ${
+                  activeView === key
+                    ? 'text-white shadow-lg'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+                style={{
+                  backgroundColor: activeView === key ? THEME_COLORS.primary : undefined,
+                  boxShadow: activeView === key ? `0 0 10px ${THEME_COLORS.primary}50` : undefined,
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <button

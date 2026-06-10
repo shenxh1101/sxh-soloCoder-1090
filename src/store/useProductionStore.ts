@@ -1,5 +1,13 @@
 import { create } from 'zustand';
-import type { ProductionState, ProductionActions, Workpiece, Machine, FaultRecord, MachineEfficiencySnapshot } from '../types/production';
+import type {
+  ProductionState,
+  ProductionActions,
+  Workpiece,
+  Machine,
+  FaultRecord,
+  MachineEfficiencySnapshot,
+  MachineStateSnapshot,
+} from '../types/production';
 import {
   INITIAL_MACHINES,
   CONVEYOR_LENGTH,
@@ -33,15 +41,24 @@ const createInitialState = (): ProductionState => ({
   globalSpeed: 1,
   isRunning: true,
   totalProduced: 0,
+  totalInspected: 0,
+  totalGood: 0,
   totalFaultTime: 0,
   totalRunTime: 0,
   currentOEE: 85,
   currentEfficiency: 90,
+  currentQuality: 95,
+  currentTaktTime: 0,
+  bottleneckMachineId: null,
   cameraMode: 'overview',
   idealCycleTime: IDEAL_CYCLE_TIME,
   maxWorkpieces: MAX_WORKPIECES,
   spawnInterval: SPAWN_INTERVAL,
   selectedMachineId: null,
+  selectedSnapshotTimestamp: null,
+  activeView: 'realtime',
+  reviewTimeFilter: 'all',
+  reviewMachineFilter: null,
 });
 
 const getProgressPosition = (progress: number): [number, number, number] => {
@@ -72,7 +89,7 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
   ...createInitialState(),
 
   triggerFault: (machineId: string) => {
-    const { machines, alerts } = get();
+    const { machines, alerts, totalProduced } = get();
     const machineIndex = machines.findIndex((m) => m.id === machineId);
     if (machineIndex === -1) return;
 
@@ -85,6 +102,9 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
       timestamp: now,
       resolvedAt: null,
       duration: 0,
+      lostProduction: 0,
+      productionAtFault: totalProduced,
+      productionAtResolve: totalProduced,
     };
 
     const newAlerts = [
@@ -115,11 +135,12 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
   },
 
   resetFault: (machineId?: string) => {
-    const { machines, alerts } = get();
+    const { machines, alerts, totalProduced, totalFaultTime } = get();
     const now = Date.now();
 
     let newMachines = [...machines];
     let newAlerts = [...alerts];
+    let additionalFaultTime = 0;
 
     if (machineId) {
       const machineIndex = machines.findIndex((m) => m.id === machineId);
@@ -128,10 +149,24 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
         let faultDuration = 0;
         if (machine.faultTime) {
           faultDuration = now - machine.faultTime;
+          additionalFaultTime = faultDuration;
         }
 
+        const lostProduction = Math.max(
+          0,
+          Math.round((faultDuration / 1000 / get().idealCycleTime) * get().globalSpeed)
+        );
+
         const updatedFaultRecords = machine.faultRecords.map((fr) =>
-          fr.resolvedAt === null ? { ...fr, resolvedAt: now, duration: faultDuration } : fr
+          fr.resolvedAt === null
+            ? {
+                ...fr,
+                resolvedAt: now,
+                duration: faultDuration,
+                lostProduction,
+                productionAtResolve: totalProduced,
+              }
+            : fr
         );
 
         newMachines[machineIndex] = {
@@ -148,8 +183,21 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
       newMachines = machines.map((m) => {
         if (m.status === 'fault' && m.faultTime) {
           const faultDuration = now - m.faultTime;
+          additionalFaultTime += faultDuration;
+          const lostProduction = Math.max(
+            0,
+            Math.round((faultDuration / 1000 / get().idealCycleTime) * get().globalSpeed)
+          );
           const updatedFaultRecords = m.faultRecords.map((fr) =>
-            fr.resolvedAt === null ? { ...fr, resolvedAt: now, duration: faultDuration } : fr
+            fr.resolvedAt === null
+              ? {
+                  ...fr,
+                  resolvedAt: now,
+                  duration: faultDuration,
+                  lostProduction,
+                  productionAtResolve: totalProduced,
+                }
+              : fr
           );
           return {
             ...m,
@@ -168,6 +216,7 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
     set({
       machines: newMachines,
       alerts: newAlerts,
+      totalFaultTime: totalFaultTime + additionalFaultTime,
     });
   },
 
@@ -185,6 +234,22 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
 
   selectMachine: (machineId: string | null) => {
     set({ selectedMachineId: machineId });
+  },
+
+  setSelectedSnapshot: (timestamp: number | null) => {
+    set({ selectedSnapshotTimestamp: timestamp });
+  },
+
+  setActiveView: (view) => {
+    set({ activeView: view });
+  },
+
+  setReviewTimeFilter: (filter) => {
+    set({ reviewTimeFilter: filter });
+  },
+
+  setReviewMachineFilter: (machineId) => {
+    set({ reviewMachineFilter: machineId });
   },
 
   spawnWorkpiece: () => {
@@ -229,6 +294,8 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
     const sortedWorkpieces = [...workpieces].sort((a, b) => a.progress - b.progress);
 
     let producedThisUpdate = 0;
+    let inspectedThisUpdate = 0;
+    let goodThisUpdate = 0;
     let newWorkpieces: Workpiece[] = [];
     let machinesToUpdate = [...machines];
 
@@ -284,6 +351,8 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
       ) {
         newInspected = true;
         newPassed = Math.random() > 0.05;
+        inspectedThisUpdate++;
+        if (newPassed) goodThisUpdate++;
         machinesToUpdate[3] = {
           ...machinesToUpdate[3],
           processedCount: machinesToUpdate[3].processedCount + 1,
@@ -307,12 +376,18 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
 
     machinesToUpdate = machinesToUpdate.map((m) => ({
       ...m,
-      efficiency: calculateMachineEfficiency(m, get().totalRunTime / 1000 + deltaTime, idealCycleTime),
+      efficiency: calculateMachineEfficiency(
+        m,
+        get().totalRunTime / 1000 + deltaTime,
+        idealCycleTime
+      ),
     }));
 
-    if (producedThisUpdate > 0) {
+    if (producedThisUpdate > 0 || inspectedThisUpdate > 0 || goodThisUpdate > 0) {
       set((state) => ({
         totalProduced: state.totalProduced + producedThisUpdate,
+        totalInspected: state.totalInspected + inspectedThisUpdate,
+        totalGood: state.totalGood + goodThisUpdate,
       }));
     }
 
@@ -326,11 +401,15 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
     const {
       productionHistory,
       totalProduced,
+      totalGood,
+      totalInspected,
       totalFaultTime,
       currentEfficiency,
       currentOEE,
+      currentQuality,
       globalSpeed,
       machines,
+      idealCycleTime,
     } = get();
     const now = Date.now();
 
@@ -344,18 +423,48 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
       }
     }
 
+    const runtimeSec = (get().totalRunTime - liveFaultTime) / 1000;
+    const taktTime = runtimeSec > 0 && totalProduced > 0 ? (runtimeSec / totalProduced) * 1000 : 0;
+
+    const machineStates: MachineStateSnapshot[] = machines.map((m) => ({
+      id: m.id,
+      name: m.name,
+      status: m.status,
+      processedCount: m.processedCount,
+      efficiency: m.efficiency,
+    }));
+
+    let bottleneckId: string | null = null;
+    let minEfficiency = Infinity;
+    for (const m of machines) {
+      if (m.status !== 'fault' && m.efficiency < minEfficiency) {
+        minEfficiency = m.efficiency;
+        bottleneckId = m.id;
+      }
+    }
+
     const newRecord = {
       timestamp: now,
       count: totalProduced,
+      goodCount: totalGood,
+      totalInspected,
       efficiency: currentEfficiency,
       oee: currentOEE,
       faultDuration: liveFaultTime,
+      taktTime,
+      machineStates,
+      bottleneckMachineId: bottleneckId,
     };
 
     const newHistory = [...productionHistory, newRecord].slice(-MAX_HISTORY_RECORDS);
     saveProductionDataToStorage(newHistory);
 
-    set({ productionHistory: newHistory });
+    set({
+      productionHistory: newHistory,
+      currentTaktTime: taktTime,
+      currentQuality: runtimeSec > 0 ? (totalGood / Math.max(totalInspected, 1)) * 100 : currentQuality,
+      bottleneckMachineId: bottleneckId,
+    });
   },
 
   updateEfficiencyMetrics: () => {
@@ -363,6 +472,8 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
       totalProduced,
       totalFaultTime,
       totalRunTime,
+      totalGood,
+      totalInspected,
       idealCycleTime,
       machines,
     } = get();
@@ -377,8 +488,10 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
 
     const plannedRunTime = totalRunTime > 0 ? totalRunTime : 1;
     const actualRuntimeSec = (totalRunTime - liveFaultTime) / 1000;
-    const goodCount = Math.floor(totalProduced * 0.95);
-    const totalCount = totalProduced > 0 ? totalProduced : 1;
+    const goodCount = totalGood;
+    const totalCount = totalInspected > 0 ? totalInspected : totalProduced > 0 ? totalProduced : 1;
+
+    const quality = totalInspected > 0 ? (totalGood / totalInspected) * 100 : 95;
 
     const oee = calculateOEE(
       plannedRunTime / 1000,
@@ -402,9 +515,8 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
         timestamp: now,
         efficiency: m.efficiency,
       };
-      const trimmedHistory = m.efficiencyHistory.length > 60
-        ? m.efficiencyHistory.slice(-60)
-        : m.efficiencyHistory;
+      const trimmedHistory =
+        m.efficiencyHistory.length > 60 ? m.efficiencyHistory.slice(-60) : m.efficiencyHistory;
       return {
         ...m,
         efficiencyHistory: [...trimmedHistory, snapshot],
@@ -414,6 +526,7 @@ export const useProductionStore = create<ProductionState & ProductionActions>((s
     set({
       currentOEE: oee,
       currentEfficiency: efficiency,
+      currentQuality: quality,
       machines: updatedMachines,
     });
   },

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Activity, Clock, Package, TrendingUp, AlertCircle, Gauge } from 'lucide-react';
+import { Activity, Clock, Package, TrendingUp, AlertCircle, Gauge, Target, Zap } from 'lucide-react';
 import { useProductionStore } from '../../store/useProductionStore';
 import { formatDuration, formatNumber } from '../../utils/efficiencyCalculator';
 import { THEME_COLORS } from '../../utils/constants';
@@ -8,10 +8,15 @@ export function EfficiencyPanel() {
   const {
     currentOEE,
     currentEfficiency,
+    currentQuality,
+    currentTaktTime,
     totalProduced,
+    totalInspected,
+    totalGood,
     totalRunTime,
     totalFaultTime,
-    globalSpeed,
+    idealCycleTime,
+    bottleneckMachineId,
     machines,
   } = useProductionStore();
 
@@ -29,6 +34,11 @@ export function EfficiencyPanel() {
     return t;
   }, [totalFaultTime, machines]);
 
+  const bottleneck = useMemo(() => {
+    if (!bottleneckMachineId) return null;
+    return machines.find((m) => m.id === bottleneckMachineId) || null;
+  }, [bottleneckMachineId, machines]);
+
   const getOEEColor = (oee: number) => {
     if (oee >= 85) return THEME_COLORS.success;
     if (oee >= 60) return THEME_COLORS.warning;
@@ -38,6 +48,12 @@ export function EfficiencyPanel() {
   const getEfficiencyColor = (eff: number) => {
     if (eff >= 90) return THEME_COLORS.success;
     if (eff >= 70) return THEME_COLORS.warning;
+    return THEME_COLORS.error;
+  };
+
+  const getQualityColor = (q: number) => {
+    if (q >= 95) return THEME_COLORS.success;
+    if (q >= 80) return THEME_COLORS.warning;
     return THEME_COLORS.error;
   };
 
@@ -57,6 +73,20 @@ export function EfficiencyPanel() {
       subValue: '实际/理论产出',
     },
     {
+      icon: <Target className="h-5 w-5" />,
+      label: '良品率',
+      value: `${formatNumber(currentQuality)}%`,
+      color: getQualityColor(currentQuality),
+      subValue: `${totalGood}/${totalInspected} 件`,
+    },
+    {
+      icon: <Clock className="h-5 w-5" />,
+      label: '生产节拍',
+      value: `${(currentTaktTime / 1000).toFixed(2)}s/件`,
+      color: THEME_COLORS.primary,
+      subValue: `理想 ${idealCycleTime}s/件`,
+    },
+    {
       icon: <Package className="h-5 w-5" />,
       label: '总产量',
       value: totalProduced.toString(),
@@ -64,25 +94,11 @@ export function EfficiencyPanel() {
       subValue: '件',
     },
     {
-      icon: <Clock className="h-5 w-5" />,
-      label: '运行时间',
-      value: formatDuration(totalRunTime),
-      color: THEME_COLORS.success,
-      subValue: '累计运行',
-    },
-    {
-      icon: <AlertCircle className="h-5 w-5" />,
-      label: '故障时间',
-      value: formatDuration(liveFaultTime),
-      color: faultMachines > 0 ? THEME_COLORS.error : THEME_COLORS.textSecondary,
-      subValue: `停机损失 ${(totalRunTime > 0 ? (liveFaultTime / totalRunTime * 100) : 0).toFixed(1)}%`,
-    },
-    {
-      icon: <Activity className="h-5 w-5" />,
-      label: '设备状态',
-      value: `${runningMachines}/${machines.length}`,
-      color: faultMachines > 0 ? THEME_COLORS.warning : THEME_COLORS.success,
-      subValue: `速度 ${globalSpeed}x`,
+      icon: <Zap className="h-5 w-5" />,
+      label: '瓶颈设备',
+      value: bottleneck ? bottleneck.name : '无',
+      color: THEME_COLORS.warning,
+      subValue: bottleneck ? `效率 ${bottleneck.efficiency.toFixed(0)}%` : '运行正常',
     },
   ];
 
@@ -97,8 +113,24 @@ export function EfficiencyPanel() {
         <div className="flex items-center gap-2 border-b border-gray-700/50 px-4 py-2">
           <Activity className="h-4 w-4 text-blue-400" />
           <span className="text-sm font-semibold text-gray-300">生产效率指标</span>
-          <div className="ml-auto flex items-center gap-4 text-xs text-gray-500">
-            <span>实时数据</span>
+          <div className="ml-auto flex items-center gap-6 text-xs">
+            <div className="flex items-center gap-2">
+              <Clock className="h-3 w-3 text-green-400" />
+              <span className="text-gray-400">运行时间:</span>
+              <span className="font-mono text-green-400">{formatDuration(totalRunTime)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-3 w-3 text-red-400" />
+              <span className="text-gray-400">故障时间:</span>
+              <span className="font-mono text-red-400">{formatDuration(liveFaultTime)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Activity className="h-3 w-3 text-blue-400" />
+              <span className="text-gray-400">设备状态:</span>
+              <span className={`font-mono ${faultMachines > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
+                {runningMachines}/{machines.length}
+              </span>
+            </div>
             <div className="flex items-center gap-1">
               <div className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
               <span className="text-green-400">在线</span>

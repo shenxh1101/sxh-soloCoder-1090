@@ -18,6 +18,7 @@ import {
   Zap,
   Activity,
   RotateCcw,
+  TrendingDown,
 } from 'lucide-react';
 import { useProductionStore } from '../../store/useProductionStore';
 import { STATUS_COLORS, STATUS_LABELS, THEME_COLORS } from '../../utils/constants';
@@ -44,6 +45,11 @@ export function MachineDetailPanel() {
     }
     return machine.totalFaultDuration;
   }, [machine]);
+
+  const totalLostProduction = useMemo(
+    () => machine.faultRecords.reduce((sum, fr) => sum + fr.lostProduction, 0),
+    [machine.faultRecords]
+  );
 
   const chartData = useMemo(() => {
     const history = machine.efficiencyHistory.slice(-30);
@@ -96,7 +102,7 @@ export function MachineDetailPanel() {
   return (
     <div className="fixed right-[76px] top-1/2 z-50 -translate-y-1/2">
       <div
-        className="w-80 rounded-xl border border-gray-700/50 bg-gray-900/95 backdrop-blur-md shadow-2xl"
+        className="w-96 rounded-xl border border-gray-700/50 bg-gray-900/95 backdrop-blur-md shadow-2xl"
         style={{ boxShadow: `0 0 40px ${statusColor}20` }}
       >
         <div
@@ -129,7 +135,7 @@ export function MachineDetailPanel() {
         </div>
 
         <div className="space-y-3 p-4">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-5 gap-2">
             <div className="rounded-lg border border-gray-700/30 bg-gray-800/50 p-2.5">
               <div className="flex items-center gap-1.5 text-xs text-gray-400">
                 <Package className="h-3 w-3" />
@@ -151,7 +157,7 @@ export function MachineDetailPanel() {
             <div className="rounded-lg border border-gray-700/30 bg-gray-800/50 p-2.5">
               <div className="flex items-center gap-1.5 text-xs text-gray-400">
                 <AlertTriangle className="h-3 w-3" />
-                故障次数
+                累计故障
               </div>
               <div className="mt-1 font-mono text-xl font-bold text-orange-400">
                 {machine.faultCount}
@@ -164,6 +170,15 @@ export function MachineDetailPanel() {
               </div>
               <div className="mt-1 font-mono text-sm font-bold text-red-400">
                 {formatDuration(liveFaultDuration)}
+              </div>
+            </div>
+            <div className="rounded-lg border border-gray-700/30 bg-gray-800/50 p-2.5">
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                <TrendingDown className="h-3 w-3" />
+                损失产量
+              </div>
+              <div className="mt-1 font-mono text-xl font-bold text-amber-400">
+                {totalLostProduction}
               </div>
             </div>
           </div>
@@ -193,17 +208,20 @@ export function MachineDetailPanel() {
                     <span className="text-gray-400">
                       {new Date(fr.timestamp).toLocaleTimeString('zh-CN')}
                     </span>
-                    {fr.resolvedAt ? (
-                      <div className="flex items-center gap-1 text-green-400">
-                        <CheckCircle className="h-3 w-3" />
-                        <span>修复 ({formatDuration(fr.duration)})</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 text-red-400 animate-pulse">
-                        <AlertTriangle className="h-3 w-3" />
-                        <span>进行中</span>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-3">
+                      <span className="text-amber-400">损失 {fr.lostProduction} 件</span>
+                      {fr.resolvedAt ? (
+                        <div className="flex items-center gap-1 text-green-400">
+                          <CheckCircle className="h-3 w-3" />
+                          <span>修复 ({formatDuration(fr.duration)})</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 text-red-400 animate-pulse">
+                          <AlertTriangle className="h-3 w-3" />
+                          <span>进行中</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
